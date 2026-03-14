@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "VoiceReply",
+    "slug": "voice-reply",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "voice-reply",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0F1E"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.voicereply.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "VoiceReply needs microphone access to record your voice for message replies."
+      }
+    },
+    "android": {
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "VoiceReply needs microphone access to record your voice for message replies."
+        }
+      ],
+      "./plugins/withKeyboardExtension"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3e227e2f-aa33-480d-8402-e6e6257bd503"
+      }
+    }
+  }
+}

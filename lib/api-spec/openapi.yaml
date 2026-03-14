@@ -1,0 +1,119 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: voicereply
+    description: VoiceReply transcription and AI reply generation
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /voicereply/transcribe:
+    post:
+      operationId: transcribeAudio
+      tags: [voicereply]
+      summary: Transcribe audio to text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranscribeAudioBody"
+      responses:
+        "200":
+          description: Transcription result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscribeAudioResponse"
+  /voicereply/generate-reply:
+    post:
+      operationId: generateReply
+      tags: [voicereply]
+      summary: Generate a polished reply from voice intent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateReplyBody"
+      responses:
+        "200":
+          description: Generated reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateReplyResponse"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    TranscribeAudioBody:
+      type: object
+      properties:
+        audio:
+          type: string
+          description: Base64-encoded audio data
+        format:
+          type: string
+          description: Audio format (e.g. wav, m4a, webm)
+      required:
+        - audio
+    TranscribeAudioResponse:
+      type: object
+      properties:
+        transcript:
+          type: string
+      required:
+        - transcript
+    GenerateReplyBody:
+      type: object
+      properties:
+        transcript:
+          type: string
+          description: The transcribed voice input from the user
+        context:
+          type: string
+          description: Optional context (the original message being replied to)
+        tone:
+          type: string
+          description: Optional tone hint (friendly, formal, casual)
+      required:
+        - transcript
+    GenerateReplyResponse:
+      type: object
+      properties:
+        reply:
+          type: string
+      required:
+        - reply
+    VoiceReplyError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error

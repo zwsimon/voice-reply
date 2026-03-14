@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium",
+        "credentialsSource": "remote",
+        "simulator": false
+      },
+      "env": {
+        "VOICEREPLY_API_BASE": "REPLACE_WITH_YOUR_REPLIT_APP_URL/api"
+      }
+    },
+    "production": {
+      "ios": {
+        "resourceClass": "m-medium",
+        "credentialsSource": "remote"
+      },
+      "env": {
+        "VOICEREPLY_API_BASE": "REPLACE_WITH_YOUR_REPLIT_APP_URL/api"
+      }
+    }
+  }
+}
