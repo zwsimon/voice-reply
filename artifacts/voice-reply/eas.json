@@ -12,7 +12,7 @@
         "simulator": false
       },
       "env": {
-        "VOICEREPLY_API_BASE": "REPLACE_WITH_YOUR_REPLIT_APP_URL/api"
+        "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
       }
     },
     "production": {
@@ -21,7 +21,7 @@
         "credentialsSource": "remote"
       },
       "env": {
-        "VOICEREPLY_API_BASE": "REPLACE_WITH_YOUR_REPLIT_APP_URL/api"
+        "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
       }
     }
   }
