@@ -49,6 +49,9 @@ jobs:
         working-directory: artifacts/voice-reply
         env:
           VOICEREPLY_API_BASE: ${{ secrets.VOICEREPLY_API_BASE }}
+          EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
+          EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
         run: |
           eas build \
             --platform ios \
@@ -61,6 +64,6 @@ jobs:
           echo "## ✅ Build submitted to EAS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Check build status and download the .ipa at:" >> $GITHUB_STEP_SUMMARY
-          echo "**https://expo.dev/accounts/YOUR_EXPO_USERNAME/projects/voice-reply/builds**" >> $GITHUB_STEP_SUMMARY
+          echo "**https://expo.dev/accounts/vbcoder/projects/voice-reply/builds**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Once the .ipa is ready, install it on your iPhone via the link EAS emails you." >> $GITHUB_STEP_SUMMARY
