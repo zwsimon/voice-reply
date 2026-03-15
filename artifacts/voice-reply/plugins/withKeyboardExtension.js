@@ -30,12 +30,14 @@ function withPodfileHermesFix(config) {
   # Fix "Unexpected duplicate tasks" in Xcode 15+ (Xcode 26):
   # Script phases with no declared outputs get implicit outputs that conflict
   # across targets. Adding a unique dummy output path per phase resolves this.
+  # Guards: output_paths can be nil for some phases; name can also be nil.
   installer.pods_project.targets.each do |target|
     target.build_phases.each do |phase|
       next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
-      next unless phase.output_paths.empty?
-      safe_name = phase.name.gsub(/[^a-zA-Z0-9]/, '_')
-      phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_#{safe_name}_#{target.name.gsub(/[^a-zA-Z0-9]/, '_')}.txt"]
+      next if phase.output_paths&.any?
+      safe_name = (phase.name || 'unnamed').gsub(/[^a-zA-Z0-9]/, '_')
+      safe_target = target.name.to_s.gsub(/[^a-zA-Z0-9]/, '_')
+      phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_#{safe_name}_#{safe_target}.txt"]
     end
   end
 `;
