@@ -96,7 +96,7 @@ async function fetchEASCredentials() {
           iosAppBuildCredentialsList {
             id
             iosDistributionType
-            iosDistributionCertificate {
+            distributionCertificate {
               id
               certificateP12
               certificatePassword
@@ -130,7 +130,7 @@ async function fetchEASCredentials() {
   if (!adhoc)
     throw new Error("No AD_HOC build credentials found in EAS vault");
 
-  const cert = adhoc.iosDistributionCertificate;
+  const cert = adhoc.distributionCertificate;
   const profile = adhoc.provisioningProfile;
   if (!cert?.certificateP12) throw new Error("Distribution cert data missing");
   if (!profile?.provisioningProfile)
