@@ -46,7 +46,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install Fastlane
-        run: gem install fastlane --no-document
+        run: sudo gem install fastlane --no-document
 
       - name: Set up iOS credentials (create extension provisioning profile)
         working-directory: artifacts/voice-reply
