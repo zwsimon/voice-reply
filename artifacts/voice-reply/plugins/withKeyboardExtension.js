@@ -27,20 +27,22 @@ function withPodfileHermesFix(config) {
       let podfile = fs.readFileSync(podfilePath, "utf8");
 
       const fix = `
-  # Fix: mark hermes-engine script phases as always_out_of_date to avoid
-  # "Unexpected duplicate tasks" error in Xcode 16+ (no declared outputs).
+  # Fix "Unexpected duplicate tasks" in Xcode 15+ (Xcode 26):
+  # Script phases with no declared outputs get implicit outputs that conflict
+  # across targets. Adding a unique dummy output path per phase resolves this.
   installer.pods_project.targets.each do |target|
-    next unless target.name == 'hermes-engine'
     target.build_phases.each do |phase|
-      next unless phase.respond_to?(:shell_script)
-      phase.always_out_of_date = '1'
+      next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
+      next unless phase.output_paths.empty?
+      safe_name = phase.name.gsub(/[^a-zA-Z0-9]/, '_')
+      phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_#{safe_name}_#{target.name.gsub(/[^a-zA-Z0-9]/, '_')}.txt"]
     end
   end
 `;
 
       // Insert AFTER react_native_post_install(...) — must count parens because
       // the call spans multiple lines with nested parens, breaking simple regex.
-      if (podfile.includes("react_native_post_install") && !podfile.includes("always_out_of_date")) {
+      if (podfile.includes("react_native_post_install") && !podfile.includes("phase_stamp_")) {
         const marker = "react_native_post_install(";
         const start = podfile.indexOf(marker);
         if (start !== -1) {
