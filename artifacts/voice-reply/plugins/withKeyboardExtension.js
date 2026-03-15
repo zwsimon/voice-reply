@@ -27,17 +27,42 @@ function withPodfileHermesFix(config) {
       let podfile = fs.readFileSync(podfilePath, "utf8");
 
       const fix = `
-  # Fix "Unexpected duplicate tasks" in Xcode 15+ (Xcode 26):
-  # Script phases with no declared outputs get implicit outputs that conflict
-  # across targets. Adding a unique dummy output path per phase resolves this.
-  # Guards: output_paths can be nil for some phases; name can also be nil.
+  # Fix 1: "Unexpected duplicate tasks" — script phases with no declared outputs
+  # get implicit outputs that Xcode 15+ flags as conflicts across targets.
+  # Give every such phase a unique dummy output path.
+  # Guards: output_paths / name can be nil for some phase types.
+  [installer.pods_project].each do |proj|
+    proj.targets.each do |target|
+      target.build_phases.each do |phase|
+        next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
+        next if phase.output_paths&.any?
+        safe_name = (phase.name || 'unnamed').gsub(/[^a-zA-Z0-9]/, '_')
+        safe_target = target.name.to_s.gsub(/[^a-zA-Z0-9]/, '_')
+        phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_\#{safe_name}_\#{safe_target}.txt"]
+      end
+    end
+  end
+  # Also patch the user-project targets (main app + extension) — CocoaPods
+  # adds [CP] script phases to them too and they may also have no outputs.
+  installer.aggregate_targets.each do |agg|
+    agg.user_project.native_targets.each do |target|
+      target.build_phases.each do |phase|
+        next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
+        next if phase.output_paths&.any?
+        safe_name = (phase.name || 'unnamed').gsub(/[^a-zA-Z0-9]/, '_')
+        safe_target = target.name.to_s.gsub(/[^a-zA-Z0-9]/, '_')
+        phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_\#{safe_name}_\#{safe_target}.txt"]
+      end
+    end
+    agg.user_project.save
+  end
+  # Fix 2: Xcode 14+ signs resource-bundle targets by default. With an extension
+  # in the project, duplicate signing tasks appear. Disable signing on bundles.
   installer.pods_project.targets.each do |target|
-    target.build_phases.each do |phase|
-      next unless phase.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase)
-      next if phase.output_paths&.any?
-      safe_name = (phase.name || 'unnamed').gsub(/[^a-zA-Z0-9]/, '_')
-      safe_target = target.name.to_s.gsub(/[^a-zA-Z0-9]/, '_')
-      phase.output_paths = ["$(DERIVED_FILE_DIR)/phase_stamp_#{safe_name}_#{safe_target}.txt"]
+    next unless target.respond_to?(:product_type)
+    next unless target.product_type == 'com.apple.product-type.bundle'
+    target.build_configurations.each do |config|
+      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
     end
   end
 `;
