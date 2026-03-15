@@ -10,10 +10,11 @@
  * This script:
  *   1. Fetches the distribution cert (p12 + password) and main app Ad Hoc
  *      provisioning profile from EAS's GraphQL API using EXPO_TOKEN.
- *   2. Uses `fastlane sigh` to create / download an Ad Hoc profile for
- *      com.voicereply.app.keyboard from Apple's portal.
- *   3. Writes a credentials.json that references all three local files so
- *      EAS can use credentialsSource:"local" for the build.
+ *   2. Authenticates with Apple using @expo/apple-utils (bundled in eas-cli)
+ *      — supports app-specific passwords, no regular password required.
+ *   3. Ensures the extension App ID (com.voicereply.app.keyboard) exists.
+ *   4. Creates an Ad Hoc provisioning profile for the extension.
+ *   5. Writes credentials.json so EAS uses credentialsSource:"local".
  *
  * Required env vars:
  *   EXPO_TOKEN, EXPO_APPLE_ID, EXPO_APPLE_APP_SPECIFIC_PASSWORD,
@@ -24,6 +25,7 @@ import https from "https";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { createRequire } from "module";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,10 +40,35 @@ const EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID || "54R8ZW3P7Q";
 
 const EAS_FULL_NAME = "@vbcoder/voice-reply";
 const EXT_BUNDLE_ID = "com.voicereply.app.keyboard";
+const DIST_CERT_SERIAL = "2E75D0534CCBE226B49F4492AB486201";
 const EXT_TARGET_NAME = "VoiceReplyKeyboard";
+const EXT_PROFILE_NAME = "VoiceReply Keyboard Ad Hoc";
 
 // ---------------------------------------------------------------------------
-// GraphQL helper
+// Resolve @expo/apple-utils from the installed eas-cli
+// ---------------------------------------------------------------------------
+function resolveAppleUtils() {
+  const easBin = execSync("which eas").toString().trim();
+  // e.g. /opt/hostedtoolcache/eas-cli/18.3.0/x64/bin/eas
+  //  → node_modules is at  /opt/hostedtoolcache/eas-cli/18.3.0/x64/node_modules
+  const easNodeModules = path.resolve(path.dirname(easBin), "..", "node_modules");
+  const indexPath = path.join(
+    easNodeModules,
+    "@expo",
+    "apple-utils",
+    "build",
+    "index.js"
+  );
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(`@expo/apple-utils not found at: ${indexPath}`);
+  }
+  console.log(`✅  Resolved @expo/apple-utils at ${indexPath}`);
+  const req = createRequire(indexPath);
+  return req(indexPath);
+}
+
+// ---------------------------------------------------------------------------
+// GraphQL helper — fetch EAS-stored credentials
 // ---------------------------------------------------------------------------
 function graphql(query) {
   return new Promise((resolve, reject) => {
@@ -81,9 +108,6 @@ function graphql(query) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Step 1 — fetch existing credentials from EAS
-// ---------------------------------------------------------------------------
 async function fetchEASCredentials() {
   console.log("📡  Fetching EAS credentials via GraphQL...");
   const data = await graphql(`{
@@ -119,7 +143,6 @@ async function fetchEASCredentials() {
   const allCreds = app.iosAppCredentials ?? [];
   if (!allCreds.length) throw new Error("No iOS credentials found in EAS vault");
 
-  // Find Ad Hoc build credentials
   let adhoc = null;
   for (const appCred of allCreds) {
     adhoc = (appCred.iosAppBuildCredentialsList ?? []).find(
@@ -127,8 +150,7 @@ async function fetchEASCredentials() {
     );
     if (adhoc) break;
   }
-  if (!adhoc)
-    throw new Error("No AD_HOC build credentials found in EAS vault");
+  if (!adhoc) throw new Error("No AD_HOC build credentials found in EAS vault");
 
   const cert = adhoc.distributionCertificate;
   const profile = adhoc.provisioningProfile;
@@ -144,65 +166,134 @@ async function fetchEASCredentials() {
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — create the extension Ad Hoc profile via fastlane sigh
+// Step 2 — create extension Ad Hoc profile via @expo/apple-utils
 // ---------------------------------------------------------------------------
-function createExtensionProfile() {
-  console.log(`\n🍎  Creating Ad Hoc profile for ${EXT_BUNDLE_ID} via fastlane sigh...`);
+async function createExtensionProfile(appleUtils) {
+  const {
+    Auth,
+    BundleId,
+    Certificate,
+    Device,
+    Profile,
+    ProfileType,
+    isNameCollisionError,
+  } = appleUtils;
 
-  const env = {
-    ...process.env,
-    FASTLANE_USER: EXPO_APPLE_ID,
-    FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD:
-      EXPO_APPLE_APP_SPECIFIC_PASSWORD,
-    FASTLANE_TEAM_ID: EXPO_APPLE_TEAM_ID,
-    FASTLANE_DISABLE_COLORS: "1",
-    CI: "true",
-  };
+  // --- 2a. Authenticate with Apple (app-specific password supported) -------
+  console.log("\n🍎  Authenticating with Apple...");
+  const authState = await Auth.loginWithUserCredentialsAsync({
+    username: EXPO_APPLE_ID,
+    password: EXPO_APPLE_APP_SPECIFIC_PASSWORD,
+    teamId: EXPO_APPLE_TEAM_ID,
+  });
+  console.log("✅  Apple authentication successful");
 
-  // Ensure the App ID exists first (idempotent — skips if already present)
-  try {
-    console.log("  → fastlane produce (register App ID if missing)...");
-    execSync(
-      [
-        "fastlane produce",
-        `--app_identifier "${EXT_BUNDLE_ID}"`,
-        `--team_id "${EXPO_APPLE_TEAM_ID}"`,
-        "--skip_itc",
-      ].join(" "),
-      { stdio: "inherit", env }
-    );
-  } catch (err) {
-    // "already exists" prints to stderr and exits 0 in most fastlane versions;
-    // treat any non-zero exit as a warning and continue to sigh.
-    console.warn("  ⚠️  fastlane produce exited non-zero (may already exist):", err.message);
+  // --- 2b. Ensure extension App ID exists ----------------------------------
+  console.log(`\n🔍  Looking up App ID for ${EXT_BUNDLE_ID}...`);
+  let bundleIdObj = await BundleId.findAsync(authState, {
+    identifier: EXT_BUNDLE_ID,
+  });
+  if (!bundleIdObj) {
+    console.log(`  → App ID not found — creating ${EXT_BUNDLE_ID}...`);
+    bundleIdObj = await BundleId.createAsync(authState, {
+      name: "VoiceReply Keyboard",
+      identifier: EXT_BUNDLE_ID,
+      platform: "IOS",
+    });
+    console.log(`✅  Created App ID: ${bundleIdObj.id}`);
+  } else {
+    console.log(`✅  Found existing App ID: ${bundleIdObj.id}`);
   }
 
-  // Download / create the Ad Hoc profile
-  console.log("  → fastlane sigh (create/download Ad Hoc profile)...");
-  execSync(
-    [
-      "fastlane sigh",
-      `--app_identifier "${EXT_BUNDLE_ID}"`,
-      "--adhoc",
-      `--team_id "${EXPO_APPLE_TEAM_ID}"`,
-      `--output_path "${CREDS_DIR}"`,
-      '--filename "ext_profile.mobileprovision"',
-      "--skip_certificate_verification",
-      "--force",
-    ].join(" "),
-    { stdio: "inherit", env }
+  // --- 2c. Find distribution certificate -----------------------------------
+  console.log(
+    `\n🔍  Finding distribution certificate (serial ${DIST_CERT_SERIAL})...`
   );
+  const allCerts = await Certificate.getAsync(authState, {
+    query: { filter: { certificateType: "IOS_DISTRIBUTION" } },
+  });
+  let distCert = allCerts.find(
+    (c) => c.attributes?.serialNumber === DIST_CERT_SERIAL
+  );
+  if (!distCert) {
+    if (allCerts.length > 0) {
+      console.warn(
+        `  ⚠️  Serial not matched — falling back to first IOS_DISTRIBUTION cert`
+      );
+      distCert = allCerts[0];
+    } else {
+      throw new Error("No IOS_DISTRIBUTION certificate found on Apple portal");
+    }
+  }
+  console.log(`✅  Using cert: ${distCert.id} (serial ${distCert.attributes?.serialNumber})`);
 
+  // --- 2d. Get registered devices ------------------------------------------
+  console.log("\n🔍  Fetching registered devices...");
+  const devices = await Device.getAllIOSProfileDevicesAsync(authState);
+  console.log(`✅  Found ${devices.length} registered device(s)`);
+
+  // --- 2e. Create the Ad Hoc profile for the extension ---------------------
+  console.log(`\n🔨  Creating Ad Hoc profile for ${EXT_BUNDLE_ID}...`);
+
+  let extProfile;
+  try {
+    extProfile = await Profile.createAsync(authState, {
+      bundleId: bundleIdObj.id,
+      certificates: [distCert],
+      devices: devices,
+      name: EXT_PROFILE_NAME,
+      profileType: ProfileType.IOS_APP_ADHOC,
+    });
+    console.log(`✅  Created new profile: ${extProfile.id}`);
+  } catch (err) {
+    if (isNameCollisionError && isNameCollisionError(err)) {
+      // A profile with this name already exists — create with a unique suffix
+      const ts = Date.now();
+      console.warn(
+        `  ⚠️  Name collision — retrying with timestamp suffix...`
+      );
+      extProfile = await Profile.createAsync(authState, {
+        bundleId: bundleIdObj.id,
+        certificates: [distCert],
+        devices: devices,
+        name: `${EXT_PROFILE_NAME} ${ts}`,
+        profileType: ProfileType.IOS_APP_ADHOC,
+      });
+      console.log(`✅  Created profile (with suffix): ${extProfile.id}`);
+    } else {
+      throw err;
+    }
+  }
+
+  // --- 2f. Extract and save profile content --------------------------------
+  let profileContent = extProfile.attributes?.profileContent;
+
+  // Some API responses omit profileContent; fetch full info if needed
+  if (!profileContent) {
+    console.log("  → profileContent not in create response — fetching full profile info...");
+    const fullProfile = await Profile.infoAsync(authState, {
+      id: extProfile.id,
+      query: {},
+    });
+    profileContent = fullProfile?.attributes?.profileContent;
+  }
+
+  if (!profileContent) {
+    throw new Error(
+      "Profile was created but profileContent attribute is missing even after re-fetch"
+    );
+  }
+
+  const profileBytes = Buffer.from(profileContent, "base64");
   const extProfilePath = path.join(CREDS_DIR, "ext_profile.mobileprovision");
-  if (!fs.existsSync(extProfilePath))
-    throw new Error("ext_profile.mobileprovision was not created by sigh");
+  fs.writeFileSync(extProfilePath, profileBytes);
+  console.log(`📄  Wrote ${extProfilePath} (${profileBytes.length} bytes)`);
 
-  console.log("✅  Extension profile created.");
   return extProfilePath;
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — write local cert/profile files + credentials.json
+// Step 3 — write cert/profile files + credentials.json
 // ---------------------------------------------------------------------------
 function writeCredentials(cert, mainProfile) {
   fs.mkdirSync(CREDS_DIR, { recursive: true });
@@ -259,12 +350,19 @@ function writeCredentials(cert, mainProfile) {
   }
 
   try {
+    const appleUtils = resolveAppleUtils();
     const { cert, profile } = await fetchEASCredentials();
-    writeCredentials(cert, profile);         // write cert + main profile NOW
-    createExtensionProfile();               // fastlane needs creds dir to exist
+
+    // Write cert + main profile files first (creates creds/ dir)
+    writeCredentials(cert, profile);
+
+    // Create extension Ad Hoc profile via @expo/apple-utils
+    await createExtensionProfile(appleUtils);
+
     console.log("\n✅  All credentials ready — proceeding to eas build.\n");
   } catch (err) {
     console.error("\n❌  setup-credentials failed:", err.message);
+    console.error(err.stack);
     process.exit(1);
   }
 })();
