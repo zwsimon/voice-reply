@@ -16,14 +16,6 @@ on:
         options:
           - preview
           - production
-      clear_credentials:
-        description: "Clear and regenerate all iOS credentials (use if provisioning fails)"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 jobs:
   build:
@@ -64,8 +56,7 @@ jobs:
           eas build \
             --platform ios \
             --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive \
-            --clear-credentials
+            --non-interactive
 
       - name: Post build URL to summary
         run: |
