@@ -16,6 +16,14 @@ on:
         options:
           - preview
           - production
+      clear_credentials:
+        description: "Clear and regenerate all iOS credentials (use if provisioning fails)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 jobs:
   build:
@@ -56,11 +64,12 @@ jobs:
           eas build \
             --platform ios \
             --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive
+            --non-interactive \
+            --clear-credentials
 
       - name: Post build URL to summary
         run: |
-          echo "## ✅ Build submitted to EAS" >> $GITHUB_STEP_SUMMARY
+          echo "## Build submitted to EAS" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Check build status and download the .ipa at:" >> $GITHUB_STEP_SUMMARY
           echo "**https://expo.dev/accounts/vbcoder/projects/voice-reply/builds**" >> $GITHUB_STEP_SUMMARY
