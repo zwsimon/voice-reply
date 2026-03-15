@@ -260,8 +260,12 @@ function withKeyboardExtensionTarget(config) {
         // already does this. Both trying to embed causes "Unexpected duplicate
         // tasks" error in Xcode 15+.
         cfg.buildSettings.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = "NO";
-        // Extensions also must not embed frameworks from the host
-        cfg.buildSettings.CODE_SIGN_STYLE = "Manual";
+        // Extensions must not re-export frameworks from the host app
+        cfg.buildSettings.LD_RUNPATH_SEARCH_PATHS = [
+          "$(inherited)",
+          "@executable_path/../../Frameworks",
+          "@executable_path/Frameworks",
+        ].join(" ");
       }
     });
 

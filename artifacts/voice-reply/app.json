@@ -18,7 +18,18 @@
       "bundleIdentifier": "com.voicereply.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "VoiceReply needs microphone access to record your voice for message replies."
-      }
+      },
+      "appExtensions": [
+        {
+          "targetName": "VoiceReplyKeyboard",
+          "bundleIdentifier": "com.voicereply.app.keyboard",
+          "entitlements": {
+            "com.apple.security.application-groups": [
+              "group.com.voicereply.app"
+            ]
+          }
+        }
+      ]
     },
     "android": {
       "permissions": ["RECORD_AUDIO"]
