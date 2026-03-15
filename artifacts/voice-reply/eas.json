@@ -8,7 +8,7 @@
       "distribution": "internal",
       "ios": {
         "resourceClass": "m-medium",
-        "credentialsSource": "remote"
+        "credentialsSource": "local"
       },
       "env": {
         "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
