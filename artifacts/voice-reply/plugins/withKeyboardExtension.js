@@ -206,15 +206,52 @@ function withKeyboardExtensionTarget(config) {
     });
 
     // ── Embed extension in the main app target ──
+    // Use the productReference UUID that addTarget already created (properly
+    // parented in the Products group). Do NOT pass a string path to addBuildPhase
+    // because xcodeproj gem will flag the resulting orphaned PBXFileReference.
     const mainTarget = xcodeProject.getFirstTarget();
-    if (mainTarget) {
-      xcodeProject.addBuildPhase(
-        [`${targetName}.appex`],
-        "PBXCopyFilesBuildPhase",
-        "Embed Foundation Extensions",
-        mainTarget.uuid,
-        "app_extension"
-      );
+    const productRef = extTarget.pbxNativeTarget.productReference;
+    if (mainTarget && productRef) {
+      const appexBuildFileUUID = genUUID();
+      objects["PBXBuildFile"][appexBuildFileUUID] = {
+        isa: "PBXBuildFile",
+        fileRef: productRef,
+        fileRef_comment: `${targetName}.appex`,
+        settings: { ATTRIBUTES: ["RemoveHeadersOnCopy"] },
+      };
+      objects["PBXBuildFile"][`${appexBuildFileUUID}_comment`] =
+        `${targetName}.appex in Embed Foundation Extensions`;
+
+      const copyPhaseUUID = genUUID();
+      objects["PBXCopyFilesBuildPhase"] =
+        objects["PBXCopyFilesBuildPhase"] || {};
+      objects["PBXCopyFilesBuildPhase"][copyPhaseUUID] = {
+        isa: "PBXCopyFilesBuildPhase",
+        buildActionMask: 2147483647,
+        dstPath: '""',
+        dstSubfolderSpec: 13,
+        files: [
+          {
+            value: appexBuildFileUUID,
+            comment: `${targetName}.appex in Embed Foundation Extensions`,
+          },
+        ],
+        name: '"Embed Foundation Extensions"',
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      objects["PBXCopyFilesBuildPhase"][`${copyPhaseUUID}_comment`] =
+        "Embed Foundation Extensions";
+
+      // Attach this phase to the main app target's buildPhases array
+      const mainNativeTarget =
+        xcodeProject.pbxNativeTargetSection()[mainTarget.uuid];
+      if (mainNativeTarget) {
+        mainNativeTarget.buildPhases = mainNativeTarget.buildPhases || [];
+        mainNativeTarget.buildPhases.push({
+          value: copyPhaseUUID,
+          comment: "Embed Foundation Extensions",
+        });
+      }
     }
 
     return config;
