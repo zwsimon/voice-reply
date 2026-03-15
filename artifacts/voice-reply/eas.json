@@ -5,7 +5,7 @@
   },
   "build": {
     "preview": {
-      "distribution": "internal",
+      "distribution": "store",
       "ios": {
         "resourceClass": "m-medium",
         "credentialsSource": "remote"
