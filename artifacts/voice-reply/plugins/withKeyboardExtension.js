@@ -289,57 +289,17 @@ function withKeyboardExtensionTarget(config) {
         // already does this. Both trying to embed causes "Unexpected duplicate
         // tasks" error in Xcode 15+.
         cfg.buildSettings.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = "NO";
+        // Development team required for signing (EAS team ID).
+        cfg.buildSettings.DEVELOPMENT_TEAM = '"54R8ZW3P7Q"';
+        cfg.buildSettings.CODE_SIGN_STYLE = '"Manual"';
       }
     });
 
-    // ── Embed extension in the main app target ──
-    // Use the productReference UUID that addTarget already created (properly
-    // parented in the Products group). Do NOT pass a string path to addBuildPhase
-    // because xcodeproj gem will flag the resulting orphaned PBXFileReference.
-    const mainTarget = xcodeProject.getFirstTarget();
-    const productRef = extTarget.pbxNativeTarget.productReference;
-    if (mainTarget && productRef) {
-      const appexBuildFileUUID = genUUID();
-      objects["PBXBuildFile"][appexBuildFileUUID] = {
-        isa: "PBXBuildFile",
-        fileRef: productRef,
-        fileRef_comment: `${targetName}.appex`,
-        settings: { ATTRIBUTES: ["RemoveHeadersOnCopy"] },
-      };
-      objects["PBXBuildFile"][`${appexBuildFileUUID}_comment`] =
-        `${targetName}.appex in Embed Foundation Extensions`;
-
-      const copyPhaseUUID = genUUID();
-      objects["PBXCopyFilesBuildPhase"] =
-        objects["PBXCopyFilesBuildPhase"] || {};
-      objects["PBXCopyFilesBuildPhase"][copyPhaseUUID] = {
-        isa: "PBXCopyFilesBuildPhase",
-        buildActionMask: 2147483647,
-        dstPath: '""',
-        dstSubfolderSpec: 13,
-        files: [
-          {
-            value: appexBuildFileUUID,
-            comment: `${targetName}.appex in Embed Foundation Extensions`,
-          },
-        ],
-        name: '"Embed Foundation Extensions"',
-        runOnlyForDeploymentPostprocessing: 0,
-      };
-      objects["PBXCopyFilesBuildPhase"][`${copyPhaseUUID}_comment`] =
-        "Embed Foundation Extensions";
-
-      // Attach this phase to the main app target's buildPhases array
-      const mainNativeTarget =
-        xcodeProject.pbxNativeTargetSection()[mainTarget.uuid];
-      if (mainNativeTarget) {
-        mainNativeTarget.buildPhases = mainNativeTarget.buildPhases || [];
-        mainNativeTarget.buildPhases.push({
-          value: copyPhaseUUID,
-          comment: "Embed Foundation Extensions",
-        });
-      }
-    }
+    // NOTE: addTarget('app_extension') in xcode@3.0.1 already creates a
+    // "Copy Files" phase (dstSubfolderSpec:13) on the main target and adds the
+    // extension product to it automatically. Do NOT create a second copy phase
+    // here — that was causing "Unexpected duplicate tasks" (two copy commands
+    // and two ValidateEmbeddedBinary tasks for the same .appex).
 
     return config;
   });
