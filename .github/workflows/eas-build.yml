@@ -45,36 +45,25 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Probe @expo/apple-utils location and API
+      - name: Probe @expo/apple-utils API
         run: |
-          echo "=== which eas ==="
-          which eas
-          echo "=== eas version ==="
-          eas --version
-          echo "=== locate apple-utils ==="
-          EAS_BIN=$(which eas)
-          EAS_ROOT=$(node -e "
-            const p = require('path');
-            // The eas binary is typically at /opt/hostedtoolcache/eas-cli/<ver>/x64/bin/eas
-            // or ~/.npm/bin/eas -> actual location varies
-            // Try to find @expo/apple-utils via require.resolve
-            try {
-              const loc = require.resolve('@expo/apple-utils/package.json');
-              console.log('FOUND VIA require:', loc);
-            } catch(e) {
-              console.log('NOT IN GLOBAL MODULES');
-            }
-          ")
-          echo "require.resolve result: $EAS_ROOT"
-          echo "=== search for apple-utils in npm global dirs ==="
-          for dir in \$(npm root -g) ~/.nvm/versions/node/*/lib/node_modules /opt/hostedtoolcache/eas-cli/*/x64/node_modules; do
-            if [ -d \"\$dir/@expo/apple-utils\" ]; then
-              echo \"FOUND: \$dir/@expo/apple-utils\"
-              cat \"\$dir/@expo/apple-utils/package.json\" | head -5
-              echo \"=== exports ===\"
-              ls \"\$dir/@expo/apple-utils/build/\" 2>/dev/null | head -20
-            fi
-          done
+          EAS_MODULES="/opt/hostedtoolcache/eas-cli/18.3.0/x64/node_modules"
+          APPLE_UTILS="$EAS_MODULES/@expo/apple-utils"
+          echo "=== package.json ==="
+          cat "$APPLE_UTILS/package.json" 2>/dev/null | head -15 || echo "NOT FOUND at $APPLE_UTILS"
+          echo "=== build dir ==="
+          ls "$APPLE_UTILS/build/" 2>/dev/null | head -30 || echo "no build dir"
+          echo "=== src dir ==="
+          ls "$APPLE_UTILS/src/" 2>/dev/null | head -30 || echo "no src dir"
+          echo "=== test require ==="
+          node --experimental-vm-modules -e "
+            const Module = require('module');
+            const req = Module.createRequire('$APPLE_UTILS/build/index.js');
+            const pkg = req('./index.js');
+            console.log('Exports:', Object.keys(pkg).join(', '));
+          " 2>&1 || echo "(require failed)"
+          echo "=== index.js first 80 lines ==="
+          head -80 "$APPLE_UTILS/build/index.js" 2>/dev/null || echo "no index.js"
 
       - name: Set up iOS credentials (create extension provisioning profile)
         working-directory: artifacts/voice-reply
