@@ -45,8 +45,36 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Install Fastlane
-        run: sudo gem install fastlane --no-document
+      - name: Probe @expo/apple-utils location and API
+        run: |
+          echo "=== which eas ==="
+          which eas
+          echo "=== eas version ==="
+          eas --version
+          echo "=== locate apple-utils ==="
+          EAS_BIN=$(which eas)
+          EAS_ROOT=$(node -e "
+            const p = require('path');
+            // The eas binary is typically at /opt/hostedtoolcache/eas-cli/<ver>/x64/bin/eas
+            // or ~/.npm/bin/eas -> actual location varies
+            // Try to find @expo/apple-utils via require.resolve
+            try {
+              const loc = require.resolve('@expo/apple-utils/package.json');
+              console.log('FOUND VIA require:', loc);
+            } catch(e) {
+              console.log('NOT IN GLOBAL MODULES');
+            }
+          ")
+          echo "require.resolve result: $EAS_ROOT"
+          echo "=== search for apple-utils in npm global dirs ==="
+          for dir in \$(npm root -g) ~/.nvm/versions/node/*/lib/node_modules /opt/hostedtoolcache/eas-cli/*/x64/node_modules; do
+            if [ -d \"\$dir/@expo/apple-utils\" ]; then
+              echo \"FOUND: \$dir/@expo/apple-utils\"
+              cat \"\$dir/@expo/apple-utils/package.json\" | head -5
+              echo \"=== exports ===\"
+              ls \"\$dir/@expo/apple-utils/build/\" 2>/dev/null | head -20
+            fi
+          done
 
       - name: Set up iOS credentials (create extension provisioning profile)
         working-directory: artifacts/voice-reply
