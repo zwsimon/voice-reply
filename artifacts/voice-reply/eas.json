@@ -5,17 +5,17 @@
   },
   "build": {
     "preview": {
-      "distribution": "internal",
+      "distribution": "store",
       "ios": {
         "resourceClass": "m-medium",
-        "credentialsSource": "remote",
-        "simulator": false
+        "credentialsSource": "remote"
       },
       "env": {
         "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
       }
     },
     "production": {
+      "distribution": "store",
       "ios": {
         "resourceClass": "m-medium",
         "credentialsSource": "remote"
