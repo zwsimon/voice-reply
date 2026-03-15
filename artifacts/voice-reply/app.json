@@ -22,12 +22,7 @@
       "appExtensions": [
         {
           "targetName": "VoiceReplyKeyboard",
-          "bundleIdentifier": "com.voicereply.app.keyboard",
-          "entitlements": {
-            "com.apple.security.application-groups": [
-              "group.com.voicereply.app"
-            ]
-          }
+          "bundleIdentifier": "com.voicereply.app.keyboard"
         }
       ]
     },
