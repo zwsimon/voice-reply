@@ -256,6 +256,12 @@ function withKeyboardExtensionTarget(config) {
         cfg.buildSettings.INFOPLIST_FILE = `"${targetName}/Info.plist"`;
         cfg.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${extensionBundleId}"`;
         cfg.buildSettings.SKIP_INSTALL = "YES";
+        // Extensions must NOT embed Swift standard libraries — the host app
+        // already does this. Both trying to embed causes "Unexpected duplicate
+        // tasks" error in Xcode 15+.
+        cfg.buildSettings.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = "NO";
+        // Extensions also must not embed frameworks from the host
+        cfg.buildSettings.CODE_SIGN_STYLE = "Manual";
       }
     });
 
