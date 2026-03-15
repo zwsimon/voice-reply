@@ -45,26 +45,6 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Probe @expo/apple-utils API
-        run: |
-          EAS_MODULES="/opt/hostedtoolcache/eas-cli/18.3.0/x64/node_modules"
-          APPLE_UTILS="$EAS_MODULES/@expo/apple-utils"
-          echo "=== package.json ==="
-          cat "$APPLE_UTILS/package.json" 2>/dev/null | head -15 || echo "NOT FOUND at $APPLE_UTILS"
-          echo "=== build dir ==="
-          ls "$APPLE_UTILS/build/" 2>/dev/null | head -30 || echo "no build dir"
-          echo "=== src dir ==="
-          ls "$APPLE_UTILS/src/" 2>/dev/null | head -30 || echo "no src dir"
-          echo "=== test require ==="
-          node --experimental-vm-modules -e "
-            const Module = require('module');
-            const req = Module.createRequire('$APPLE_UTILS/build/index.js');
-            const pkg = req('./index.js');
-            console.log('Exports:', Object.keys(pkg).join(', '));
-          " 2>&1 || echo "(require failed)"
-          echo "=== index.js first 80 lines ==="
-          head -80 "$APPLE_UTILS/build/index.js" 2>/dev/null || echo "no index.js"
-
       - name: Set up iOS credentials (create extension provisioning profile)
         working-directory: artifacts/voice-reply
         env:
