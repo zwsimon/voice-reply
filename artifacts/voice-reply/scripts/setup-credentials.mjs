@@ -49,22 +49,41 @@ const EXT_PROFILE_NAME = "VoiceReply Keyboard Ad Hoc";
 // ---------------------------------------------------------------------------
 function resolveAppleUtils() {
   const easBin = execSync("which eas").toString().trim();
-  // e.g. /opt/hostedtoolcache/eas-cli/18.3.0/x64/bin/eas
-  //  → node_modules is at  /opt/hostedtoolcache/eas-cli/18.3.0/x64/node_modules
-  const easNodeModules = path.resolve(path.dirname(easBin), "..", "node_modules");
-  const indexPath = path.join(
-    easNodeModules,
-    "@expo",
-    "apple-utils",
-    "build",
-    "index.js"
-  );
-  if (!fs.existsSync(indexPath)) {
-    throw new Error(`@expo/apple-utils not found at: ${indexPath}`);
+
+  // Resolve the symlink so we get the real file location
+  // (expo-github-action puts eas in node_modules/.bin which is a symlink)
+  let realEas = easBin;
+  try {
+    realEas = execSync(`readlink -f "${easBin}"`).toString().trim();
+  } catch (_) {
+    // readlink not available — fall back to the symlink path
   }
-  console.log(`✅  Resolved @expo/apple-utils at ${indexPath}`);
-  const req = createRequire(indexPath);
-  return req(indexPath);
+  console.log(`eas binary → ${realEas}`);
+
+  // Walk up the directory tree from the resolved binary, checking both:
+  //   <dir>/@expo/apple-utils/build/index.js          (dir is already node_modules)
+  //   <dir>/node_modules/@expo/apple-utils/build/index.js
+  let dir = path.dirname(realEas);
+  for (let depth = 0; depth < 12; depth++) {
+    for (const candidate of [
+      path.join(dir, "@expo", "apple-utils", "build", "index.js"),
+      path.join(dir, "node_modules", "@expo", "apple-utils", "build", "index.js"),
+    ]) {
+      if (fs.existsSync(candidate)) {
+        console.log(`✅  Found @expo/apple-utils at ${candidate}`);
+        const req = createRequire(candidate);
+        return req(candidate);
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // filesystem root — give up
+    dir = parent;
+  }
+
+  throw new Error(
+    `@expo/apple-utils not found after walking up from ${path.dirname(realEas)}.\n` +
+    `eas symlink: ${easBin}  real: ${realEas}`
+  );
 }
 
 // ---------------------------------------------------------------------------
