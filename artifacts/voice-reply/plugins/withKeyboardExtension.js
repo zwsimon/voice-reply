@@ -72,7 +72,7 @@ function withKeyboardExtensionTarget(config) {
     );
     if (alreadyAdded) return config;
 
-    // Add the extension target
+    // Add the extension target (creates native target + build phases + group)
     const extTarget = xcodeProject.addTarget(
       targetName,
       "app_extension",
@@ -80,19 +80,114 @@ function withKeyboardExtensionTarget(config) {
       extensionBundleId
     );
 
-    // Add source file
-    xcodeProject.addSourceFile(
-      `${targetName}/KeyboardViewController.swift`,
-      { target: extTarget.uuid }
-    );
+    if (!extTarget) {
+      console.warn("[withKeyboardExtension] addTarget returned null, skipping");
+      return config;
+    }
 
-    // Add Info.plist as a resource
-    xcodeProject.addResourceFile(
-      `${targetName}/Info.plist`,
-      { target: extTarget.uuid }
-    );
+    // ── Manually add file references to avoid xcode library null-path bug ──
 
-    // Build settings for the extension target
+    const objects = xcodeProject.hash.project.objects;
+
+    // Helper: generate UUID in xcode format
+    const genUUID = () => xcodeProject.generateUuid();
+
+    // 1. Add PBXFileReference for KeyboardViewController.swift
+    const swiftFileRef = genUUID();
+    objects["PBXFileReference"] = objects["PBXFileReference"] || {};
+    objects["PBXFileReference"][swiftFileRef] = {
+      isa: "PBXFileReference",
+      lastKnownFileType: "sourcecode.swift",
+      name: '"KeyboardViewController.swift"',
+      path: `"${targetName}/KeyboardViewController.swift"`,
+      sourceTree: '"<group>"',
+    };
+    objects["PBXFileReference"][`${swiftFileRef}_comment`] =
+      "KeyboardViewController.swift";
+
+    // 2. Add PBXBuildFile for the Swift source
+    const swiftBuildFile = genUUID();
+    objects["PBXBuildFile"] = objects["PBXBuildFile"] || {};
+    objects["PBXBuildFile"][swiftBuildFile] = {
+      isa: "PBXBuildFile",
+      fileRef: swiftFileRef,
+      fileRef_comment: "KeyboardViewController.swift",
+    };
+    objects["PBXBuildFile"][`${swiftBuildFile}_comment`] =
+      "KeyboardViewController.swift in Sources";
+
+    // 3. Add PBXFileReference for Info.plist
+    const plistFileRef = genUUID();
+    objects["PBXFileReference"][plistFileRef] = {
+      isa: "PBXFileReference",
+      lastKnownFileType: "text.plist.xml",
+      name: '"Info.plist"',
+      path: `"${targetName}/Info.plist"`,
+      sourceTree: '"<group>"',
+    };
+    objects["PBXFileReference"][`${plistFileRef}_comment`] = "Info.plist";
+
+    // 4. Add PBXBuildFile for Info.plist (resource)
+    const plistBuildFile = genUUID();
+    objects["PBXBuildFile"][plistBuildFile] = {
+      isa: "PBXBuildFile",
+      fileRef: plistFileRef,
+      fileRef_comment: "Info.plist",
+    };
+    objects["PBXBuildFile"][`${plistBuildFile}_comment`] =
+      "Info.plist in Resources";
+
+    // 5. Find the extension target's PBXGroup and add file refs to it
+    const groups = objects["PBXGroup"] || {};
+    // addTarget creates a group with the same name as the target
+    let extGroupKey = null;
+    for (const [key, val] of Object.entries(groups)) {
+      if (val && val.name === `"${targetName}"`) {
+        extGroupKey = key;
+        break;
+      }
+    }
+    if (extGroupKey) {
+      groups[extGroupKey].children = groups[extGroupKey].children || [];
+      groups[extGroupKey].children.push(
+        { value: swiftFileRef, comment: "KeyboardViewController.swift" },
+        { value: plistFileRef, comment: "Info.plist" }
+      );
+    }
+
+    // 6. Find the Sources build phase for our extension target and add Swift file
+    const sourceBuildPhases = objects["PBXSourcesBuildPhase"] || {};
+    const extTargetPhaseUUIDs = (
+      extTarget.pbxNativeTarget.buildPhases || []
+    ).map((p) => p.value);
+
+    for (const phaseKey of extTargetPhaseUUIDs) {
+      if (sourceBuildPhases[phaseKey]) {
+        sourceBuildPhases[phaseKey].files =
+          sourceBuildPhases[phaseKey].files || [];
+        sourceBuildPhases[phaseKey].files.push({
+          value: swiftBuildFile,
+          comment: "KeyboardViewController.swift in Sources",
+        });
+        break;
+      }
+    }
+
+    // 7. Find the Resources build phase for our extension target and add Info.plist
+    const resourceBuildPhases = objects["PBXResourcesBuildPhase"] || {};
+    for (const phaseKey of extTargetPhaseUUIDs) {
+      if (resourceBuildPhases[phaseKey]) {
+        resourceBuildPhases[phaseKey].files =
+          resourceBuildPhases[phaseKey].files || [];
+        resourceBuildPhases[phaseKey].files.push({
+          value: plistBuildFile,
+          comment: "Info.plist in Resources",
+        });
+        break;
+      }
+    }
+
+    // ── Build settings for the extension target ──
     const buildConfig = xcodeProject.pbxXCBuildConfigurationSection();
     Object.keys(buildConfig).forEach((key) => {
       const cfg = buildConfig[key];
@@ -103,14 +198,14 @@ function withKeyboardExtensionTarget(config) {
       ) {
         cfg.buildSettings.SWIFT_VERSION = "5.0";
         cfg.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "16.0";
-        cfg.buildSettings.CODE_SIGN_ENTITLEMENTS = `${targetName}/VoiceReplyKeyboard.entitlements`;
-        cfg.buildSettings.INFOPLIST_FILE = `${targetName}/Info.plist`;
+        cfg.buildSettings.CODE_SIGN_ENTITLEMENTS = `"${targetName}/VoiceReplyKeyboard.entitlements"`;
+        cfg.buildSettings.INFOPLIST_FILE = `"${targetName}/Info.plist"`;
         cfg.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = `"${extensionBundleId}"`;
         cfg.buildSettings.SKIP_INSTALL = "YES";
       }
     });
 
-    // Embed extension in the main app target
+    // ── Embed extension in the main app target ──
     const mainTarget = xcodeProject.getFirstTarget();
     if (mainTarget) {
       xcodeProject.addBuildPhase(
