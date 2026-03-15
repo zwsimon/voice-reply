@@ -291,7 +291,7 @@ function withKeyboardExtensionTarget(config) {
         cfg.buildSettings.ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = "NO";
         // Development team required for signing (EAS team ID).
         cfg.buildSettings.DEVELOPMENT_TEAM = '"54R8ZW3P7Q"';
-        cfg.buildSettings.CODE_SIGN_STYLE = '"Manual"';
+        cfg.buildSettings.CODE_SIGN_STYLE = "Automatic";
       }
     });
 
