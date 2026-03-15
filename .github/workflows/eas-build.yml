@@ -56,8 +56,7 @@ jobs:
           eas build \
             --platform ios \
             --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive \
-            --output /tmp/voicereply.ipa || true
+            --non-interactive
 
       - name: Post build URL to summary
         run: |
