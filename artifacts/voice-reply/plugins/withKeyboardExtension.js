@@ -9,7 +9,50 @@ const fs = require("fs");
 const EXTENSION_NAME = "VoiceReplyKeyboard";
 const SOURCE_DIR = path.join(__dirname, "keyboard-extension");
 
-// ── Step 1: Copy Swift source files & plists into ios/VoiceReplyKeyboard/ ──
+// ── Step 1a: Patch Podfile to fix Xcode 16+ "Unexpected duplicate tasks" ──
+// The hermes-engine pod has a script phase with no declared outputs, which
+// Xcode 16+ flags as an error. Setting always_out_of_date = '1' on it is
+// equivalent to unchecking "Based on dependency analysis" — which suppresses
+// the duplicate-tasks error without affecting functionality.
+function withPodfileHermesFix(config) {
+  return withDangerousMod(config, [
+    "ios",
+    (config) => {
+      const podfilePath = path.join(
+        config.modRequest.platformProjectRoot,
+        "Podfile"
+      );
+      if (!fs.existsSync(podfilePath)) return config;
+
+      let podfile = fs.readFileSync(podfilePath, "utf8");
+
+      const fix = `
+  # Fix: mark hermes-engine script phases as always_out_of_date to avoid
+  # "Unexpected duplicate tasks" error in Xcode 16+ (no declared outputs).
+  installer.pods_project.targets.each do |target|
+    next unless target.name == 'hermes-engine'
+    target.build_phases.each do |phase|
+      next unless phase.respond_to?(:shell_script)
+      phase.always_out_of_date = '1'
+    end
+  end
+`;
+
+      // Insert before the closing `end` of the post_install block
+      if (podfile.includes("react_native_post_install") && !podfile.includes("always_out_of_date")) {
+        podfile = podfile.replace(
+          /(\s*react_native_post_install\([^)]+\))/,
+          `$1\n${fix}`
+        );
+        fs.writeFileSync(podfilePath, podfile);
+      }
+
+      return config;
+    },
+  ]);
+}
+
+// ── Step 1b: Copy Swift source files & plists into ios/VoiceReplyKeyboard/ ──
 function withKeyboardExtensionFiles(config) {
   return withDangerousMod(config, [
     "ios",
@@ -279,6 +322,7 @@ function withAppGroupEntitlement(config) {
 // ── Compose all steps ──
 module.exports = function withKeyboardExtension(config) {
   config = withKeyboardExtensionFiles(config);
+  config = withPodfileHermesFix(config);
   config = withKeyboardExtensionTarget(config);
   config = withAppGroupEntitlement(config);
   return config;

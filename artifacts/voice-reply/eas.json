@@ -8,8 +8,7 @@
       "distribution": "internal",
       "ios": {
         "resourceClass": "m-medium",
-        "credentialsSource": "remote",
-        "image": "macos-sequoia-15.2-xcode-16.2"
+        "credentialsSource": "remote"
       },
       "env": {
         "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
@@ -19,8 +18,7 @@
       "distribution": "store",
       "ios": {
         "resourceClass": "m-medium",
-        "credentialsSource": "remote",
-        "image": "macos-sequoia-15.2-xcode-16.2"
+        "credentialsSource": "remote"
       },
       "env": {
         "VOICEREPLY_API_BASE": "https://voice-reply.replit.app/api"
