@@ -38,6 +38,10 @@ const EXPO_APPLE_APP_SPECIFIC_PASSWORD =
   process.env.EXPO_APPLE_APP_SPECIFIC_PASSWORD;
 const EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID || "54R8ZW3P7Q";
 
+// Optional: supply a pre-downloaded extension profile as base64 to skip Apple auth.
+// If set, Apple authentication is skipped entirely.
+const APPLE_EXT_PROFILE_BASE64 = process.env.APPLE_EXT_PROFILE_BASE64;
+
 const EAS_FULL_NAME = "@vbcoder/voice-reply";
 const EXT_BUNDLE_ID = "com.voicereply.app.keyboard";
 const DIST_CERT_SERIAL = "2E75D0534CCBE226B49F4492AB486201";
@@ -198,13 +202,32 @@ async function createExtensionProfile(appleUtils) {
     isNameCollisionError,
   } = appleUtils;
 
-  // --- 2a. Authenticate with Apple (app-specific password supported) -------
+  // --- 2a. Authenticate with Apple ----------------------------------------
+  // Supports both app-specific passwords (xxxx-xxxx-xxxx-xxxx) and regular passwords.
   console.log("\n🍎  Authenticating with Apple...");
-  const authState = await Auth.loginWithUserCredentialsAsync({
-    username: EXPO_APPLE_ID,
-    password: EXPO_APPLE_APP_SPECIFIC_PASSWORD,
-    teamId: EXPO_APPLE_TEAM_ID,
-  });
+  let authState;
+  try {
+    authState = await Auth.loginWithUserCredentialsAsync({
+      username: EXPO_APPLE_ID,
+      password: EXPO_APPLE_APP_SPECIFIC_PASSWORD,
+      teamId: EXPO_APPLE_TEAM_ID,
+    });
+  } catch (authErr) {
+    // Provide a helpful error message for common auth failures
+    const msg = authErr.message || String(authErr);
+    if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("password")) {
+      throw new Error(
+        `Apple authentication failed: ${msg}\n\n` +
+        `HELP: The EXPO_APPLE_APP_SPECIFIC_PASSWORD secret may be expired or revoked.\n` +
+        `  • Go to https://appleid.apple.com → Security → App-Specific Passwords\n` +
+        `  • Generate a new password (format: xxxx-xxxx-xxxx-xxxx)\n` +
+        `  • Update the EXPO_APPLE_APP_SPECIFIC_PASSWORD GitHub Secret\n\n` +
+        `ALTERNATIVE: Set APPLE_EXT_PROFILE_BASE64 secret with a pre-downloaded profile\n` +
+        `  (see README for manual profile download instructions)`
+      );
+    }
+    throw authErr;
+  }
   console.log("✅  Apple authentication successful");
 
   // --- 2b. Ensure extension App ID exists ----------------------------------
@@ -357,26 +380,45 @@ function writeCredentials(cert, mainProfile) {
 (async () => {
   console.log("=== VoiceReply credential setup ===\n");
 
-  for (const [name, val] of [
-    ["EXPO_TOKEN", EXPO_TOKEN],
-    ["EXPO_APPLE_ID", EXPO_APPLE_ID],
-    ["EXPO_APPLE_APP_SPECIFIC_PASSWORD", EXPO_APPLE_APP_SPECIFIC_PASSWORD],
-  ]) {
-    if (!val) {
-      console.error(`❌  Missing required env var: ${name}`);
-      process.exit(1);
-    }
+  if (!EXPO_TOKEN) {
+    console.error("❌  Missing required env var: EXPO_TOKEN");
+    process.exit(1);
   }
 
   try {
-    const appleUtils = resolveAppleUtils();
     const { cert, profile } = await fetchEASCredentials();
 
     // Write cert + main profile files first (creates creds/ dir)
     writeCredentials(cert, profile);
 
-    // Create extension Ad Hoc profile via @expo/apple-utils
-    await createExtensionProfile(appleUtils);
+    // -----------------------------------------------------------------------
+    // Extension profile — two paths:
+    // PATH A (preferred): APPLE_EXT_PROFILE_BASE64 secret is pre-populated
+    //   → decode and write directly, no Apple authentication needed
+    // PATH B (automatic): authenticate with Apple via @expo/apple-utils
+    //   → requires valid EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD
+    // -----------------------------------------------------------------------
+
+    if (APPLE_EXT_PROFILE_BASE64) {
+      console.log("\n📦  Using pre-supplied APPLE_EXT_PROFILE_BASE64 secret...");
+      const profileBytes = Buffer.from(APPLE_EXT_PROFILE_BASE64, "base64");
+      const extProfilePath = path.join(CREDS_DIR, "ext_profile.mobileprovision");
+      fs.writeFileSync(extProfilePath, profileBytes);
+      console.log(`📄  Wrote ${extProfilePath} (${profileBytes.length} bytes)`);
+      console.log("✅  Extension profile loaded from secret.");
+    } else {
+      // PATH B — Apple authentication required
+      if (!EXPO_APPLE_ID || !EXPO_APPLE_APP_SPECIFIC_PASSWORD) {
+        console.error(
+          "❌  Extension profile requires either:\n" +
+          "    • APPLE_EXT_PROFILE_BASE64 secret (pre-downloaded profile), OR\n" +
+          "    • EXPO_APPLE_ID + EXPO_APPLE_APP_SPECIFIC_PASSWORD (for automatic creation)"
+        );
+        process.exit(1);
+      }
+      const appleUtils = resolveAppleUtils();
+      await createExtensionProfile(appleUtils);
+    }
 
     console.log("\n✅  All credentials ready — proceeding to eas build.\n");
   } catch (err) {
