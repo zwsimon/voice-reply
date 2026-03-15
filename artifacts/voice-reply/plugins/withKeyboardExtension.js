@@ -38,13 +38,24 @@ function withPodfileHermesFix(config) {
   end
 `;
 
-      // Insert before the closing `end` of the post_install block
+      // Insert AFTER react_native_post_install(...) — must count parens because
+      // the call spans multiple lines with nested parens, breaking simple regex.
       if (podfile.includes("react_native_post_install") && !podfile.includes("always_out_of_date")) {
-        podfile = podfile.replace(
-          /(\s*react_native_post_install\([^)]+\))/,
-          `$1\n${fix}`
-        );
-        fs.writeFileSync(podfilePath, podfile);
+        const marker = "react_native_post_install(";
+        const start = podfile.indexOf(marker);
+        if (start !== -1) {
+          let depth = 0;
+          let endIdx = start + marker.length - 1;
+          for (let i = endIdx; i < podfile.length; i++) {
+            if (podfile[i] === "(") depth++;
+            else if (podfile[i] === ")") {
+              depth--;
+              if (depth === 0) { endIdx = i + 1; break; }
+            }
+          }
+          podfile = podfile.slice(0, endIdx) + "\n" + fix + podfile.slice(endIdx);
+          fs.writeFileSync(podfilePath, podfile);
+        }
       }
 
       return config;
