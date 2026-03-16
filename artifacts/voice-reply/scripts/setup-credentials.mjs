@@ -38,9 +38,15 @@ const EXPO_APPLE_APP_SPECIFIC_PASSWORD =
   process.env.EXPO_APPLE_APP_SPECIFIC_PASSWORD;
 const EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID || "54R8ZW3P7Q";
 
-// Optional: supply a pre-downloaded extension profile as base64 to skip Apple auth.
-// If set, Apple authentication is skipped entirely.
-const APPLE_EXT_PROFILE_BASE64 = process.env.APPLE_EXT_PROFILE_BASE64;
+// Optional overrides — if ALL three are set the script never contacts EAS or Apple.
+//   APPLE_EXT_PROFILE_BASE64  – Ad Hoc profile for com.voicereply.app.keyboard (base64 .mobileprovision)
+//   APPLE_MAIN_PROFILE_BASE64 – Ad Hoc profile for com.voicereply.app          (base64 .mobileprovision)
+//   APPLE_DIST_CERT_P12_BASE64 – Distribution certificate P12 (base64)
+//   APPLE_DIST_CERT_PASSWORD   – Password for the P12 above
+const APPLE_EXT_PROFILE_BASE64  = process.env.APPLE_EXT_PROFILE_BASE64;
+const APPLE_MAIN_PROFILE_BASE64 = process.env.APPLE_MAIN_PROFILE_BASE64;
+const APPLE_DIST_CERT_P12_BASE64 = process.env.APPLE_DIST_CERT_P12_BASE64;
+const APPLE_DIST_CERT_PASSWORD   = process.env.APPLE_DIST_CERT_PASSWORD ?? "";
 
 const EAS_FULL_NAME = "@vbcoder/voice-reply";
 const MAIN_BUNDLE_ID = "com.voicereply.app";
@@ -133,6 +139,22 @@ function graphql(query) {
 }
 
 async function fetchEASCredentials() {
+  // ── Try 0: all-secrets mode — no EAS or Apple auth needed at all ──────────
+  if (APPLE_DIST_CERT_P12_BASE64 && APPLE_MAIN_PROFILE_BASE64) {
+    console.log("🔑  Using GitHub Secrets for cert + main profile (offline mode)...");
+    return {
+      cert: {
+        certificateP12: APPLE_DIST_CERT_P12_BASE64,
+        certificatePassword: APPLE_DIST_CERT_PASSWORD,
+        serialNumber: DIST_CERT_SERIAL,
+      },
+      profile: {
+        provisioningProfile: APPLE_MAIN_PROFILE_BASE64,
+        developerPortalIdentifier: "6NY635U3W5",
+      },
+    };
+  }
+
   console.log("📡  Fetching EAS credentials via GraphQL...");
 
   // ── Try 1: app-level credentials (normal path) ───────────────────────────
@@ -183,8 +205,8 @@ async function fetchEASCredentials() {
     return { cert, profile };
   }
 
-  // ── Try 2: account-level fallback (project config was deleted from EAS UI) ──
-  console.log("⚠️  Project-level credentials missing — trying account-level fallback...");
+  // ── Try 2: account-level cert fallback (only cert, not profile) ───────────
+  console.log("⚠️  Project-level credentials missing — trying account-level cert fallback...");
   const EAS_ACCOUNT = EAS_FULL_NAME.split("/")[0];
 
   const acctData = await graphql(`{
@@ -202,46 +224,38 @@ async function fetchEASCredentials() {
             serialNumber
           }
         }
-        appleAppIdentifiers(bundleIdentifier: "${MAIN_BUNDLE_ID}") {
-          id
-          bundleIdentifier
-          iosAppCredentials {
-            iosAppBuildCredentialsList {
-              provisioningProfile {
-                id
-                provisioningProfile
-                developerPortalIdentifier
-              }
-            }
-          }
-        }
       }
     }
   }`).catch((e) => { console.warn("⚠️  Account-level query failed:", e.message); return null; });
 
   const myAcct = acctData?.me?.accounts?.find(a => a.name === EAS_ACCOUNT);
-  if (!myAcct) throw new Error(
-    "iOS credentials not found at app or account level.\n" +
-    "The project credential configuration was deleted from EAS.\n" +
-    "Fix: go to https://expo.dev/accounts/vbcoder/projects/voice-reply/credentials\n" +
-    "and re-add the iOS bundle identifier com.voicereply.app with Ad Hoc credentials."
+  const allTeamCerts = (myAcct?.appleTeams ?? []).flatMap(t => t.appleDistributionCertificates ?? []);
+  const acctCert = allTeamCerts.find(c => c.serialNumber === DIST_CERT_SERIAL) ?? allTeamCerts[0];
+
+  if (acctCert?.certificateP12) {
+    console.log(`✅  Distribution cert found at account level: ${acctCert.serialNumber}`);
+    console.warn(
+      "\n⚠️  MAIN APP PROVISIONING PROFILE NOT FOUND IN EAS.\n" +
+      "    The project credentials were deleted from EAS.\n\n" +
+      "    To fix — choose one:\n" +
+      "    A) EAS restore: https://expo.dev/accounts/vbcoder/projects/voice-reply/credentials\n" +
+      "       → Add Bundle Identifier → com.voicereply.app → link existing cert\n\n" +
+      "    B) GitHub Secret: download your main app Ad Hoc profile from\n" +
+      "       https://developer.apple.com/account/resources/profiles/list\n" +
+      "       encode it: certutil -encode profile.mobileprovision tmp.b64 && type tmp.b64\n" +
+      "       (or PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes('profile.mobileprovision'))\n" +
+      "       then set APPLE_MAIN_PROFILE_BASE64 in GitHub Secrets.\n" +
+      "       Also set APPLE_DIST_CERT_P12_BASE64 + APPLE_DIST_CERT_PASSWORD from EAS:\n" +
+      "       https://expo.dev/accounts/vbcoder/settings/credentials\n"
+    );
+  }
+
+  throw new Error(
+    "iOS credentials not found.\n" +
+    "EAS project credentials were deleted. Re-add at:\n" +
+    "https://expo.dev/accounts/vbcoder/projects/voice-reply/credentials\n" +
+    "OR set APPLE_DIST_CERT_P12_BASE64 + APPLE_MAIN_PROFILE_BASE64 GitHub Secrets."
   );
-
-  const allTeamCerts = (myAcct.appleTeams ?? []).flatMap(t => t.appleDistributionCertificates ?? []);
-  const cert = allTeamCerts.find(c => c.serialNumber === DIST_CERT_SERIAL) ?? allTeamCerts[0];
-  if (!cert?.certificateP12) throw new Error("Distribution certificate not found in EAS account vault");
-
-  const allProfiles = (myAcct.appleAppIdentifiers ?? [])
-    .flatMap(a => [].concat(a.iosAppCredentials ?? []))
-    .flatMap(c => c.iosAppBuildCredentialsList ?? [])
-    .map(b => b.provisioningProfile)
-    .filter(Boolean);
-  const profile = allProfiles[0];
-  if (!profile?.provisioningProfile) throw new Error("Main app provisioning profile not found in EAS account vault");
-
-  console.log(`✅  Distribution cert serial (account-level): ${cert.serialNumber}`);
-  console.log(`✅  Main app profile ID (account-level):     ${profile.developerPortalIdentifier}`);
-  return { cert, profile };
 }
 
 // ---------------------------------------------------------------------------
