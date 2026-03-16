@@ -202,14 +202,16 @@ async function fetchEASCredentials() {
             serialNumber
           }
         }
-        appleAppIdentifiers {
+        appleAppIdentifiers(bundleIdentifier: "${MAIN_BUNDLE_ID}") {
           id
           bundleIdentifier
-          appleProvisioning: iosAppBuildCredentialsList {
-            provisioningProfile {
-              id
-              provisioningProfile
-              developerPortalIdentifier
+          iosAppCredentials {
+            iosAppBuildCredentialsList {
+              provisioningProfile {
+                id
+                provisioningProfile
+                developerPortalIdentifier
+              }
             }
           }
         }
@@ -230,8 +232,10 @@ async function fetchEASCredentials() {
   if (!cert?.certificateP12) throw new Error("Distribution certificate not found in EAS account vault");
 
   const allProfiles = (myAcct.appleAppIdentifiers ?? [])
-    .filter(a => a.bundleIdentifier === MAIN_BUNDLE_ID)
-    .flatMap(a => (a.appleProvisioning ?? []).map(p => p.provisioningProfile).filter(Boolean));
+    .flatMap(a => [].concat(a.iosAppCredentials ?? []))
+    .flatMap(c => c.iosAppBuildCredentialsList ?? [])
+    .map(b => b.provisioningProfile)
+    .filter(Boolean);
   const profile = allProfiles[0];
   if (!profile?.provisioningProfile) throw new Error("Main app provisioning profile not found in EAS account vault");
 
