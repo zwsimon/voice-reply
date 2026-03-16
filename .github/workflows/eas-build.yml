@@ -53,6 +53,9 @@ jobs:
           EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
           EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
           APPLE_EXT_PROFILE_BASE64: ${{ secrets.APPLE_EXT_PROFILE_BASE64 }}
+          APPLE_MAIN_PROFILE_BASE64: ${{ secrets.APPLE_MAIN_PROFILE_BASE64 }}
+          APPLE_DIST_CERT_P12_BASE64: ${{ secrets.APPLE_DIST_CERT_P12_BASE64 }}
+          APPLE_DIST_CERT_PASSWORD: ${{ secrets.APPLE_DIST_CERT_PASSWORD }}
         run: node scripts/setup-credentials.mjs
 
       - name: Push extension profile to EAS secrets (makes it available on Mac build machine)
