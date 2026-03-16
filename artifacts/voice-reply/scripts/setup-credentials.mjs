@@ -43,6 +43,7 @@ const EXPO_APPLE_TEAM_ID = process.env.EXPO_APPLE_TEAM_ID || "54R8ZW3P7Q";
 const APPLE_EXT_PROFILE_BASE64 = process.env.APPLE_EXT_PROFILE_BASE64;
 
 const EAS_FULL_NAME = "@vbcoder/voice-reply";
+const MAIN_BUNDLE_ID = "com.voicereply.app";
 const EXT_BUNDLE_ID = "com.voicereply.app.keyboard";
 const DIST_CERT_SERIAL = "2E75D0534CCBE226B49F4492AB486201";
 const EXT_TARGET_NAME = "VoiceReplyKeyboard";
@@ -133,6 +134,8 @@ function graphql(query) {
 
 async function fetchEASCredentials() {
   console.log("📡  Fetching EAS credentials via GraphQL...");
+
+  // ── Try 1: app-level credentials (normal path) ───────────────────────────
   const data = await graphql(`{
     app {
       byFullName(fullName: "${EAS_FULL_NAME}") {
@@ -164,8 +167,6 @@ async function fetchEASCredentials() {
   if (!app) throw new Error("App not found in EAS — check EXPO_TOKEN");
 
   const allCreds = app.iosAppCredentials ?? [];
-  if (!allCreds.length) throw new Error("No iOS credentials found in EAS vault");
-
   let adhoc = null;
   for (const appCred of allCreds) {
     adhoc = (appCred.iosAppBuildCredentialsList ?? []).find(
@@ -173,18 +174,58 @@ async function fetchEASCredentials() {
     );
     if (adhoc) break;
   }
-  if (!adhoc) throw new Error("No AD_HOC build credentials found in EAS vault");
 
-  const cert = adhoc.distributionCertificate;
-  const profile = adhoc.provisioningProfile;
-  if (!cert?.certificateP12) throw new Error("Distribution cert data missing");
-  if (!profile?.provisioningProfile)
-    throw new Error("Main app profile data missing");
+  if (adhoc?.distributionCertificate?.certificateP12 && adhoc?.provisioningProfile?.provisioningProfile) {
+    const cert = adhoc.distributionCertificate;
+    const profile = adhoc.provisioningProfile;
+    console.log(`✅  Distribution cert serial: ${cert.serialNumber}`);
+    console.log(`✅  Main app profile ID:     ${profile.developerPortalIdentifier}`);
+    return { cert, profile };
+  }
 
-  console.log(`✅  Distribution cert serial: ${cert.serialNumber}`);
-  console.log(
-    `✅  Main app profile ID:     ${profile.developerPortalIdentifier}`
+  // ── Try 2: account-level fallback (project config was deleted from EAS UI) ──
+  console.log("⚠️  Project-level credentials missing — trying account-level fallback...");
+  const EAS_ACCOUNT = EAS_FULL_NAME.split("/")[0];
+
+  const acctData = await graphql(`{
+    account {
+      byName(accountName: "${EAS_ACCOUNT}") {
+        appleDistributionCertificates {
+          id
+          certificateP12
+          certificatePassword
+          serialNumber
+        }
+        appleProvisioningProfiles {
+          id
+          provisioningProfile
+          developerPortalIdentifier
+          appleAppIdentifier { bundleIdentifier }
+        }
+      }
+    }
+  }`).catch(() => null);
+
+  const acct = acctData?.account?.byName;
+  if (!acct) throw new Error(
+    "iOS credentials not found at app or account level.\n" +
+    "The project credential configuration was deleted from EAS.\n" +
+    "Fix: go to https://expo.dev/accounts/vbcoder/projects/voice-reply/credentials\n" +
+    "and re-add the iOS bundle identifier com.voicereply.app with Ad Hoc credentials."
   );
+
+  const certs = acct.appleDistributionCertificates ?? [];
+  const cert = certs.find(c => c.serialNumber === DIST_CERT_SERIAL) ?? certs[0];
+  if (!cert?.certificateP12) throw new Error("Distribution certificate not found in EAS account vault");
+
+  const profiles = acct.appleProvisioningProfiles ?? [];
+  const profile = profiles.find(
+    p => p.appleAppIdentifier?.bundleIdentifier === MAIN_BUNDLE_ID
+  ) ?? profiles.find(p => p.provisioningProfile);
+  if (!profile?.provisioningProfile) throw new Error("Main app provisioning profile not found in EAS account vault");
+
+  console.log(`✅  Distribution cert serial (account-level): ${cert.serialNumber}`);
+  console.log(`✅  Main app profile ID (account-level):     ${profile.developerPortalIdentifier}`);
   return { cert, profile };
 }
 
