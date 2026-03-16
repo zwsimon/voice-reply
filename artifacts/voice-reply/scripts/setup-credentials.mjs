@@ -188,40 +188,51 @@ async function fetchEASCredentials() {
   const EAS_ACCOUNT = EAS_FULL_NAME.split("/")[0];
 
   const acctData = await graphql(`{
-    account {
-      byName(accountName: "${EAS_ACCOUNT}") {
-        appleDistributionCertificates {
+    me {
+      accounts {
+        id
+        name
+        appleTeams {
           id
-          certificateP12
-          certificatePassword
-          serialNumber
+          appleTeamIdentifier
+          appleDistributionCertificates {
+            id
+            certificateP12
+            certificatePassword
+            serialNumber
+          }
         }
-        appleProvisioningProfiles {
+        appleAppIdentifiers {
           id
-          provisioningProfile
-          developerPortalIdentifier
-          appleAppIdentifier { bundleIdentifier }
+          bundleIdentifier
+          appleProvisioning: iosAppBuildCredentialsList {
+            provisioningProfile {
+              id
+              provisioningProfile
+              developerPortalIdentifier
+            }
+          }
         }
       }
     }
-  }`).catch(() => null);
+  }`).catch((e) => { console.warn("⚠️  Account-level query failed:", e.message); return null; });
 
-  const acct = acctData?.account?.byName;
-  if (!acct) throw new Error(
+  const myAcct = acctData?.me?.accounts?.find(a => a.name === EAS_ACCOUNT);
+  if (!myAcct) throw new Error(
     "iOS credentials not found at app or account level.\n" +
     "The project credential configuration was deleted from EAS.\n" +
     "Fix: go to https://expo.dev/accounts/vbcoder/projects/voice-reply/credentials\n" +
     "and re-add the iOS bundle identifier com.voicereply.app with Ad Hoc credentials."
   );
 
-  const certs = acct.appleDistributionCertificates ?? [];
-  const cert = certs.find(c => c.serialNumber === DIST_CERT_SERIAL) ?? certs[0];
+  const allTeamCerts = (myAcct.appleTeams ?? []).flatMap(t => t.appleDistributionCertificates ?? []);
+  const cert = allTeamCerts.find(c => c.serialNumber === DIST_CERT_SERIAL) ?? allTeamCerts[0];
   if (!cert?.certificateP12) throw new Error("Distribution certificate not found in EAS account vault");
 
-  const profiles = acct.appleProvisioningProfiles ?? [];
-  const profile = profiles.find(
-    p => p.appleAppIdentifier?.bundleIdentifier === MAIN_BUNDLE_ID
-  ) ?? profiles.find(p => p.provisioningProfile);
+  const allProfiles = (myAcct.appleAppIdentifiers ?? [])
+    .filter(a => a.bundleIdentifier === MAIN_BUNDLE_ID)
+    .flatMap(a => (a.appleProvisioning ?? []).map(p => p.provisioningProfile).filter(Boolean));
+  const profile = allProfiles[0];
   if (!profile?.provisioningProfile) throw new Error("Main app provisioning profile not found in EAS account vault");
 
   console.log(`✅  Distribution cert serial (account-level): ${cert.serialNumber}`);
