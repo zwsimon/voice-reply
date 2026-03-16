@@ -405,6 +405,25 @@ function writeCredentials(cert, mainProfile) {
       const extProfilePath = path.join(CREDS_DIR, "ext_profile.mobileprovision");
       fs.writeFileSync(extProfilePath, profileBytes);
       console.log(`📄  Wrote ${extProfilePath} (${profileBytes.length} bytes)`);
+
+      // Validate the profile contains the correct bundle ID
+      const profileStr = profileBytes.toString("binary");
+      if (profileStr.includes(EXT_BUNDLE_ID)) {
+        console.log(`✅  Profile bundle ID verified: ${EXT_BUNDLE_ID}`);
+      } else if (profileStr.includes("com.voicereply.app")) {
+        console.error(
+          `\n❌  WRONG PROFILE: The APPLE_EXT_PROFILE_BASE64 secret contains the MAIN APP profile\n` +
+          `    (com.voicereply.app), NOT the keyboard extension profile.\n\n` +
+          `    You need to:\n` +
+          `    1. Go to developer.apple.com → Certificates, Identifiers & Profiles → Profiles\n` +
+          `    2. Create a NEW Ad Hoc profile for App ID: com.voicereply.app.keyboard\n` +
+          `    3. Download it, base64-encode it, and update APPLE_EXT_PROFILE_BASE64 in GitHub Secrets`
+        );
+        process.exit(1);
+      } else {
+        console.warn(`⚠️   Could not verify bundle ID in profile — proceeding anyway`);
+      }
+
       console.log("✅  Extension profile loaded from secret.");
     } else {
       // PATH B — Apple authentication required
