@@ -52,14 +52,31 @@ jobs:
           EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
           EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
           EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
-          # Optional fast-path: pre-downloaded Ad Hoc profile for com.voicereply.app.keyboard
-          # If set, skips Apple authentication entirely.
           APPLE_EXT_PROFILE_BASE64: ${{ secrets.APPLE_EXT_PROFILE_BASE64 }}
         run: node scripts/setup-credentials.mjs
+
+      - name: Push extension profile to EAS secrets (makes it available on Mac build machine)
+        working-directory: artifacts/voice-reply
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_EXT_PROFILE_BASE64: ${{ secrets.APPLE_EXT_PROFILE_BASE64 }}
+        run: |
+          if [ -n "$APPLE_EXT_PROFILE_BASE64" ]; then
+            echo "Pushing APPLE_EXT_PROFILE_BASE64 to EAS secrets..."
+            eas secret:create \
+              --scope project \
+              --name APPLE_EXT_PROFILE_BASE64 \
+              --type string \
+              --value "$APPLE_EXT_PROFILE_BASE64" \
+              --force \
+              --non-interactive 2>/dev/null || \
+            echo "⚠️  Secret may already exist — continuing"
+          fi
 
       - name: Build iOS with EAS
         working-directory: artifacts/voice-reply
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           VOICEREPLY_API_BASE: ${{ secrets.VOICEREPLY_API_BASE }}
           EXPO_APPLE_ID: ${{ secrets.EXPO_APPLE_ID }}
           EXPO_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.EXPO_APPLE_APP_SPECIFIC_PASSWORD }}
@@ -68,7 +85,8 @@ jobs:
           eas build \
             --platform ios \
             --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive
+            --non-interactive \
+            --wait
 
       - name: Post build URL to summary
         run: |
